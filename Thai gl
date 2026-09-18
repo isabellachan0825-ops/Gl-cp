@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>泰國 GL CP 配對遊戲</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: "PingFang TC", "Microsoft JhengHei", sans-serif;
+    }
+    body {
+      background-color: #fdf2f8;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      margin: 0;
+    }
+    h1 {
+      color: #db2777;
+      margin-bottom: 5px;
+      text-align: center;
+    }
+    p.subtitle {
+      color: #701a75;
+      margin-top: 0;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    
+    .game-container {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 650px;
+      margin-bottom: 20px;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      width: 45%;
+      z-index: 2;
+    }
+
+    .card {
+      background: #ffffff;
+      border: 3px solid #fbcfe8;
+      border-radius: 12px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+      user-select: none;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: #f472b6;
+    }
+
+    .card.selected {
+      border-color: #ec4899;
+      background-color: #fce7f3;
+      box-shadow: 0 0 12px rgba(236, 72, 153, 0.4);
+    }
+
+    .card.paired {
+      border-color: #a855f7;
+      background-color: #f3e8ff;
+    }
+
+    .card img {
+      width: 90px;
+      height: 90px;
+      object-fit: cover;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+
+    .card .name {
+      margin-top: 8px;
+      font-weight: bold;
+      color: #475569;
+      font-size: 14px;
+    }
+
+    /* SVG 連線畫布 */
+    #svg-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .line {
+      stroke: #ec4899;
+      stroke-width: 4;
+      stroke-dasharray: 6;
+      animation: dash 1s linear infinite;
+    }
+
+    @keyframes dash {
+      to {
+        stroke-dashoffset: -12;
+      }
+    }
+
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    #check-btn {
+      background-color: #ec4899;
+      color: white;
+    }
+    #check-btn:hover { background-color: #db2777; }
+
+    #reset-btn {
+      background-color: #94a3b8;
+      color: white;
+    }
+    #reset-btn:hover { background-color: #64748b; }
+
+    button:active { transform: scale(0.96); }
+
+    /* 結算彈窗 */
+    .result-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 30px;
+      border-radius: 16px;
+      text-align: center;
+      max-width: 400px;
+      width: 80%;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    }
+
+    .modal-content h2 { color: #db2777; margin-top: 0; }
+  </style>
+</head>
+<body>
+
+  <h1>💗 泰國 GL CP 夥伴連線配對</h1>
+  <p class="subtitle">點擊左右兩邊對應的 CP 夥伴進行連線，全部配對完成後按「核對答案」！</p>
+
+  <div class="game-container" id="game-container">
+    <svg id="svg-canvas"></svg>
+    
+    <!-- 左側欄位 (CP 夥伴 A) -->
+    <div class="column" id="left-column"></div>
+    
+    <!-- 右側欄位 (CP 夥伴 B) -->
+    <div class="column" id="right-column"></div>
+  </div>
+
+  <div class="controls">
+    <button id="check-btn" onclick="checkAnswers()">核對答案</button>
+    <button id="reset-btn" onclick="initGame()">重新洗牌</button>
+  </div>
+
+  <!-- 結算彈窗 -->
+  <div class="result-modal" id="result-modal">
+    <div class="modal-content">
+      <h2 id="result-title">結算結果</h2>
+      <p id="result-text" style="font-size: 18px; color: #4b5563;"></p>
+      <button onclick="closeModal()" style="background-color: #ec4899; color: white;">再玩一次</button>
+    </div>
+  </div>
+
+  <script>
+    // ---------------------------------------------------------------------
+    // 9 組泰國 GL CP 數據資料庫
+    // ---------------------------------------------------------------------
+    const cpDataLeft = [
+      { id: 1, name: "Lingling", img: "IMG_2969.jpeg" },
+      { id: 2, name: "Freen", img: "IMG_3882.jpeg" },
+      { id: 3, name: "Lena", img: "IMG_3885.jpeg" },
+      { id: 4, name: "Oom", img: "IMG_3888.jpeg" },
+      { id: 5, name: "Emi", img: "IMG_3891.jpeg" },
+      { id: 6, name: "Jan", img: "IMG_3893.jpeg" },
+      { id: 7, name: "Namtan", img: "IMG_3895.jpeg" },
+      { id: 8, name: "Milk", img: "IMG_3897.jpeg" },
+      { id: 9, name: "Engfa", img: "IMG_3900.jpeg" }
+    ];
+
+    const cpDataRight = [
+      { id: 1, name: "Orm", img: "IMG_2972.jpeg" },
+      { id: 2, name: "Becky", img: "IMG_3884.jpeg" },
+      { id: 3, name: "Miu", img: "IMG_3887.jpeg" },
+      { id: 4, name: "Bam", img: "IMG_3889.jpeg" },
+      { id: 5, name: "Bonnie", img: "IMG_3892.jpeg" },
+      { id: 6, name: "JingJing", img: "IMG_3894.jpeg" },
+      { id: 7, name: "Film", img: "IMG_3896.jpeg" },
+      { id: 8, name: "Love", img: "IMG_3899.jpeg" },
+      { id: 9, name: "Charlotte", img: "IMG_3901.jpeg" }
+    ];
+
+    let selectedLeft = null;
+    let selectedRight = null;
+    let userMatches = []; // 紀錄玩家連線
+
+    // 洗牌演算法 (Fisher-Yates)
+    function shuffle(array) {
+      const arr = [...array];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    // 初始化遊戲
+    function initGame() {
+      userMatches = [];
+      selectedLeft = null;
+      selectedRight = null;
+      
+      const leftCol = document.getElementById('left-column');
+      const rightCol = document.getElementById('right-column');
+      const svg = document.getElementById('svg-canvas');
+      
+      leftCol.innerHTML = '';
+      rightCol.innerHTML = '';
+      svg.innerHTML = '';
+
+      // 隨機打亂左右順序
+      const shuffledLeft = shuffle(cpDataLeft);
+      const shuffledRight = shuffle(cpDataRight);
+
+      // 渲染左邊卡片
+      shuffledLeft.forEach(item => {
+        const card = createCard(item, 'left');
+        leftCol.appendChild(card);
+      });
+
+      // 渲染右邊卡片
+      shuffledRight.forEach(item => {
+        const card = createCard(item, 'right');
+        rightCol.appendChild(card);
+      });
+
+      window.removeEventListener('resize', redrawLines);
+      window.addEventListener('resize', redrawLines);
+    }
+
+    // 建立卡片元素
+    function createCard(item, side) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.dataset.id = item.id;
+      card.dataset.side = side;
+
+      card.innerHTML = `
+        <img src="${item.img}" alt="${item.name}">
+        <div class="name">${item.name}</div>
+      `;
+
+      card.addEventListener('click', () => handleCardClick(card, side));
+      return card;
+    }
+
+    // 卡片點擊事件處理
+    function handleCardClick(card, side) {
+      // 若該卡片已有連線，再次點擊取消連線
+      const existingMatchIndex = userMatches.findIndex(m => 
+        side === 'left' ? m.leftElem === card : m.rightElem === card
+      );
+
+      if (existingMatchIndex !== -1) {
+        const removed = userMatches.splice(existingMatchIndex, 1)[0];
+        removed.leftElem.classList.remove('paired', 'selected');
+        removed.rightElem.classList.remove('paired', 'selected');
+        redrawLines();
+        return;
+      }
+
+      if (side === 'left') {
+        if (selectedLeft) selectedLeft.classList.remove('selected');
+        selectedLeft = card;
+        card.classList.add('selected');
+      } else {
+        if (selectedRight) selectedRight.classList.remove('selected');
+        selectedRight = card;
+        card.classList.add('selected');
+      }
+
+      // 當左右各選擇一張時建立連線
+      if (selectedLeft && selectedRight) {
+        userMatches.push({
+          leftId: parseInt(selectedLeft.dataset.id),
+          rightId: parseInt(selectedRight.dataset.id),
+          leftElem: selectedLeft,
+          rightElem: selectedRight
+        });
+
+        selectedLeft.classList.remove('selected');
+        selectedRight.classList.remove('selected');
+        selectedLeft.classList.add('paired');
+        selectedRight.classList.add('paired');
+
+        selectedLeft = null;
+        selectedRight = null;
+
+        redrawLines();
+      }
+    }
+
+    // 重繪繪圖板上的虛線
+    function redrawLines() {
+      const svg = document.getElementById('svg-canvas');
+      const containerRect = document.getElementById('game-container').getBoundingClientRect();
+      svg.innerHTML = '';
+
+      userMatches.forEach(match => {
+        const rectL = match.leftElem.getBoundingClientRect();
+        const rectR = match.rightElem.getBoundingClientRect();
+
+        const x1 = rectL.right - containerRect.left;
+        const y1 = rectL.top + rectL.height / 2 - containerRect.top;
+
+        const x2 = rectR.left - containerRect.left;
+        const y2 = rectR.top + rectR.height / 2 - containerRect.top;
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        line.setAttribute('class', 'line');
+
+        svg.appendChild(line);
+      });
+    }
+
+    // 檢查答案正確度
+    function checkAnswers() {
+      const totalPairs = cpDataLeft.length;
+
+      if (userMatches.length < totalPairs) {
+        alert(`還有卡片未連線喔！目前完成 ${userMatches.length} / ${totalPairs} 對。`);
+        return;
+      }
+
+      let correctCount = 0;
+      userMatches.forEach(match => {
+        if (match.leftId === match.rightId) {
+          correctCount++;
+        }
+      });
+
+      const modal = document.getElementById('result-modal');
+      const title = document.getElementById('result-title');
+      const text = document.getElementById('result-text');
+
+      if (correctCount === totalPairs) {
+        title.innerText = "🎉 太厲害了！完美全對！";
+        text.innerText = `你成功配對了全部 ${totalPairs} 對泰國 GL CP！`;
+      } else {
+        title.innerText = "💪 再接再厲！";
+        text.innerText = `你答對了 ${correctCount} / ${totalPairs} 對 CP，再試一次吧！`;
+      }
+
+      modal.style.display = 'flex';
+    }
+
+    function closeModal() {
+      document.getElementById('result-modal').style.display = 'none';
+      initGame();
+    }
+
+    // 載入頁面時自動啟動遊戲
+    window.onload = initGame;
+  </script>
+</body>
+</html>
